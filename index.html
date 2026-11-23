@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>우리집 집밥 핸드북 & AI 식단 플래너</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Noto Sans KR & Gowun Batang for warm handbook aesthetic -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans KR"', 'sans-serif'],
+            serif: ['"Gowun Batang"', 'serif'],
+          },
+          colors: {
+            ivory: {
+              50: '#FDFBF7',
+              100: '#F7F3EB',
+              200: '#EFE8DA',
+            },
+            sage: {
+              50: '#F2F6F3',
+              100: '#E1ECE4',
+              500: '#5C836B',
+              600: '#4A6B57',
+              700: '#395444',
+            },
+            terracotta: {
+              50: '#FDF5F2',
+              100: '#FAE6DF',
+              500: '#D96B43',
+              600: '#C25832',
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #FDFBF7;
+      color: #2D2A26;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Custom scrollbar for clean look */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #F7F3EB;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #D5CEC2;
+      border-radius: 9999px;
+    }
+    .handbook-shadow {
+      box-shadow: 0 4px 20px -2px rgba(45, 42, 38, 0.06), 0 1px 3px 0 rgba(45, 42, 38, 0.04);
+    }
+    .stack-card {
+      transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease;
+    }
+    .stack-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px -5px rgba(45, 42, 38, 0.1);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Toast / Custom Notification Banner (Replaces alert) -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Top Header -->
+  <header class="bg-white/90 backdrop-blur-md border-b border-ivory-200 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <!-- Brand Title -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-sage-600 text-white flex items-center justify-center shadow-sm">
+          <i data-lucide="book-open" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="font-serif text-lg sm:text-xl font-bold text-stone-800 tracking-tight leading-none">
+            우리집 집밥 핸드북
+          </h1>
+          <p class="text-[11px] text-stone-500 mt-1 hidden sm:block">2인 맞벌이 15분 원팬 식단 · 매끼 갓 지은 밥</p>
+        </div>
+      </div>
+
+      <!-- Couple Sync Status & Room Code Button -->
+      <div class="flex items-center gap-2">
+        <div id="sync-status-badge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-sage-50 border border-sage-100 text-sage-700 text-xs font-medium">
+          <span id="sync-dot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="sync-text">연결 중...</span>
+        </div>
+        <button onclick="openRoomModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-ivory-100 hover:bg-ivory-200 text-stone-700 text-xs font-semibold transition border border-ivory-200">
+          <i data-lucide="users" class="w-3.5 h-3.5 text-terracotta-500"></i>
+          <span>공유 코드: <strong id="current-room-label" class="text-stone-900">OURHOME</strong></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="max-w-7xl mx-auto px-4 sm:px-6 flex gap-1 sm:gap-2 overflow-x-auto border-t border-ivory-100 bg-ivory-50/60">
+      <button onclick="switchTab('calendar')" id="tab-btn-calendar" class="tab-btn active flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 border-sage-600 text-sage-700 whitespace-nowrap transition">
+        <i data-lucide="calendar-days" class="w-4 h-4"></i>
+        <span>식단 달력</span>
+      </button>
+      <button onclick="switchTab('stack')" id="tab-btn-stack" class="tab-btn flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-stone-500 hover:text-stone-800 whitespace-nowrap transition">
+        <i data-lucide="layers" class="w-4 h-4"></i>
+        <span>레시피 스택</span>
+        <span id="stack-count-pill" class="px-1.5 py-0.5 text-[11px] rounded-full bg-ivory-200 text-stone-700">0</span>
+      </button>
+      <button onclick="switchTab('ai')" id="tab-btn-ai" class="tab-btn flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-stone-500 hover:text-stone-800 whitespace-nowrap transition">
+        <i data-lucide="sparkles" class="w-4 h-4 text-terracotta-500"></i>
+        <span>AI 다음 주 식단 추천</span>
+      </button>
+      <button onclick="switchTab('grocery')" id="tab-btn-grocery" class="tab-btn flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-stone-500 hover:text-stone-800 whitespace-nowrap transition">
+        <i data-lucide="shopping-basket" class="w-4 h-4"></i>
+        <span>장보기 & 예산</span>
+        <span id="grocery-count-pill" class="px-1.5 py-0.5 text-[11px] rounded-full bg-terracotta-100 text-terracotta-600">0</span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+
+    <!-- =====================================================================
+         VIEW 1: CALENDAR VIEW (주간/월간 달력 레이아웃)
+    ====================================================================== -->
+    <section id="view-calendar" class="space-y-5">
+      <!-- Top Summary & Controls -->
+      <div class="bg-white rounded-2xl p-4 sm:p-5 border border-ivory-200 handbook-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <button onclick="changeCalendarOffset(-1)" class="p-2 rounded-xl hover:bg-ivory-100 text-stone-600 border border-ivory-200 transition" title="이전">
+            <i data-lucide="chevron-left" class="w-5 h-5"></i>
+          </button>
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 id="calendar-period-title" class="font-serif text-xl sm:text-2xl font-bold text-stone-800">2026년 11월</h2>
+              <button onclick="resetCalendarToday()" class="px-2.5 py-1 text-xs font-medium rounded-lg bg-ivory-100 hover:bg-ivory-200 text-stone-700 transition">오늘</button>
+            </div>
+            <p class="text-xs text-stone-500 mt-0.5">🍚 밥은 퇴근 직후 갓 지어 먹고, 반찬은 15분 원팬 조리로 완성합니다.</p>
+          </div>
+          <button onclick="changeCalendarOffset(1)" class="p-2 rounded-xl hover:bg-ivory-100 text-stone-600 border border-ivory-200 transition" title="다음">
+            <i data-lucide="chevron-right" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- View Mode Toggle: Week vs Month -->
+          <div class="inline-flex rounded-xl bg-ivory-100 p-1 border border-ivory-200">
+            <button onclick="setCalendarMode('week')" id="cal-mode-week" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-sage-700 shadow-sm transition">주간 한눈에</button>
+            <button onclick="setCalendarMode('month')" id="cal-mode-month" class="px-3 py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-stone-900 transition">월간 달력</button>
+          </div>
+          <button onclick="switchTab('ai')" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-terracotta-500 hover:bg-terracotta-600 text-white text-xs font-semibold shadow-sm transition">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            <span>AI 다음 주 식단 짜기</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Calendar Grid Container -->
+      <div id="calendar-grid-wrapper" class="bg-white rounded-2xl border border-ivory-200 handbook-shadow overflow-hidden">
+        <!-- Weekday Header -->
+        <div class="grid grid-cols-7 bg-ivory-100/80 border-b border-ivory-200 text-center py-2.5 text-xs font-semibold text-stone-600">
+          <div class="text-terracotta-600">일</div>
+          <div>월</div>
+          <div>화</div>
+          <div>수</div>
+          <div>목</div>
+          <div>금</div>
+          <div class="text-sage-700">토</div>
+        </div>
+        <!-- Dynamic Days Grid -->
+        <div id="calendar-days-grid" class="grid grid-cols-1 md:grid-cols-7 divide-y md:divide-y-0 md:divide-x divide-ivory-200">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Quick Prep Tip Strip -->
+      <div class="bg-sage-50/80 border border-sage-100 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div class="flex items-start gap-3">
+          <div class="w-8 h-8 rounded-xl bg-sage-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+            <i data-lucide="timer" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-sage-700">맞벌이 퇴근 후 15분 황금 동선</h3>
+            <p class="text-xs text-stone-600 mt-0.5">현관 들어오자마자 <strong>① 쌀 씻어 전기밥솥 취사 버튼(20분)</strong>을 먼저 누른 뒤, 밥이 뜸 드는 동안 <strong>② 프라이팬 하나로 15분 메인 요리</strong>를 조리하면 식탁에 딱 동시에 올라갑니다.</p>
+          </div>
+        </div>
+        <button onclick="openNewRecipeModal()" class="shrink-0 px-3 py-2 rounded-xl bg-white hover:bg-ivory-50 text-sage-700 border border-sage-200 text-xs font-semibold transition">
+          + 새 메뉴 스택 추가
+        </button>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         VIEW 2: RECIPE STACK ARCHIVE (메뉴 겹침 방지 스택 아카이브)
+    ====================================================================== -->
+    <section id="view-stack" class="hidden space-y-5">
+      <div class="bg-white rounded-2xl p-4 sm:p-5 border border-ivory-200 handbook-shadow flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h2 class="font-serif text-xl font-bold text-stone-800">레시피 스택 (메뉴 중복 방지 아카이브)</h2>
+          <p class="text-xs text-stone-500 mt-1">우리가 해먹은 요리가 카드로 쌓입니다. <strong>최근 14일 이내 먹은 메뉴</strong>는 중복 주의 표시가 뜨니 오래된 메뉴부터 골라보세요.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Filter Buttons -->
+          <div class="inline-flex rounded-xl bg-ivory-100 p-1 border border-ivory-200 text-xs">
+            <button onclick="setStackFilter('all')" id="stack-filter-all" class="px-3 py-1.5 rounded-lg font-semibold bg-white text-stone-800 shadow-sm">전체</button>
+            <button onclick="setStackFilter('safe')" id="stack-filter-safe" class="px-3 py-1.5 rounded-lg font-medium text-sage-700 hover:text-sage-900">추천 (안 먹은 지 오래됨)</button>
+            <button onclick="setStackFilter('recent')" id="stack-filter-recent" class="px-3 py-1.5 rounded-lg font-medium text-terracotta-600 hover:text-terracotta-700">최근 섭취 (중복 주의)</button>
+          </div>
+          <button onclick="openNewRecipeModal()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-xs font-semibold shadow-sm transition">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>새 레시피 쌓기</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Ingredient Quick Tag Bar -->
+      <div id="stack-ingredient-filters" class="flex items-center gap-2 overflow-x-auto pb-1">
+        <!-- Rendered by JS -->
+      </div>
+
+      <!-- Recipe Cards Deck Grid -->
+      <div id="recipe-stack-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         VIEW 3: AI NEXT-WEEK MEAL & GROCERY PLANNER (Gemini AI 추천 채팅)
+    ====================================================================== -->
+    <section id="view-ai" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <!-- Left: AI Chat Assistant -->
+      <div class="lg:col-span-7 bg-white rounded-2xl border border-ivory-200 handbook-shadow flex flex-col h-[640px]">
+        <!-- Chat Header -->
+        <div class="p-4 border-b border-ivory-200 flex items-center justify-between bg-ivory-50/70 rounded-t-2xl">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-terracotta-500 text-white flex items-center justify-center shadow-sm">
+              <i data-lucide="chef-hat" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h2 class="font-bold text-sm text-stone-800">AI 집밥 플래너 셰프</h2>
+              <p class="text-[11px] text-stone-500">최근 식단 중복 회피 · 식재료 100% 소진 · 15분 원팬 설계</p>
+            </div>
+          </div>
+          <span class="px-2.5 py-1 rounded-full bg-sage-50 text-sage-700 text-[11px] font-medium border border-sage-100">자동 중복 체크 ON</span>
+        </div>
+
+        <!-- Chat Messages Area -->
+        <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4 bg-ivory-50/30">
+          <!-- Initial Greeting -->
+          <div class="flex items-start gap-2.5">
+            <div class="w-8 h-8 rounded-full bg-terracotta-100 text-terracotta-600 flex items-center justify-center shrink-0 text-xs font-bold">AI</div>
+            <div class="bg-white border border-ivory-200 rounded-2xl rounded-tl-none p-3.5 text-sm text-stone-700 shadow-sm max-w-[88%] space-y-2">
+              <p>안녕하세요! 다음 주 평일(월~금) 저녁 식단과 장보기 리스트를 한 번에 짜드릴게요.</p>
+              <p class="text-xs text-stone-500 bg-ivory-50 p-2.5 rounded-xl border border-ivory-100">
+                💡 <strong>이렇게 입력해 보세요:</strong><br/>
+                • "다음 주에 <strong>제육볶음</strong>이랑 <strong>카레</strong> 먹고 싶어"<br/>
+                • "<strong>대패삼겹살</strong>이랑 <strong>두부</strong> 활용해서 4만원 이내로 짜줘"<br/>
+                • "비 오는 날 어울리는 얼큰한 찌개 하나 넣고 나머지 원팬 요리로 추천해줘"
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Prompt Chips -->
+        <div class="px-4 py-2 border-t border-ivory-100 bg-white flex gap-1.5 overflow-x-auto">
+          <button onclick="fillAiPrompt('다음 주에 제육볶음이랑 카레 먹고 싶어. 나머지 요일 식재료 겹치게 짜줘!')" class="shrink-0 px-2.5 py-1 rounded-full bg-ivory-100 hover:bg-ivory-200 text-stone-700 text-xs transition">
+            "제육볶음 + 카레 위주로 짜줘"
+          </button>
+          <button onclick="fillAiPrompt('다음 주에 닭갈비랑 순두부찌개 먹고 싶어. 식재료 남지 않게 장보기까지 추천해줘')" class="shrink-0 px-2.5 py-1 rounded-full bg-ivory-100 hover:bg-ivory-200 text-stone-700 text-xs transition">
+            "닭갈비 + 순두부찌개 추천"
+          </button>
+          <button onclick="fillAiPrompt('야근이 많아서 10분컷 초간단 덮밥이랑 볶음 위주로 다음 주 식단 짜줘')" class="shrink-0 px-2.5 py-1 rounded-full bg-ivory-100 hover:bg-ivory-200 text-stone-700 text-xs transition">
+            "야근 주간 10분컷 원팬 식단"
+          </button>
+        </div>
+
+        <!-- Chat Input -->
+        <form onsubmit="handleAiSubmit(event)" class="p-3 border-t border-ivory-200 bg-white rounded-b-2xl flex items-center gap-2">
+          <input id="ai-prompt-input" type="text" placeholder="다음 주에 먹고 싶은 메뉴 1~2개를 입력하세요..." class="flex-1 px-3.5 py-2.5 rounded-xl bg-ivory-50 border border-ivory-200 text-sm focus:outline-none focus:border-sage-500" required />
+          <button id="ai-submit-btn" type="submit" class="px-4 py-2.5 rounded-xl bg-terracotta-500 hover:bg-terracotta-600 text-white text-sm font-semibold flex items-center gap-1.5 shadow-sm transition shrink-0">
+            <span>추천받기</span>
+            <i data-lucide="send" class="w-4 h-4"></i>
+          </button>
+        </form>
+      </div>
+
+      <!-- Right: AI Generated Preview & One-Click Apply Card -->
+      <div class="lg:col-span-5 bg-white rounded-2xl border border-ivory-200 handbook-shadow p-5 flex flex-col justify-between min-h-[420px]">
+        <div id="ai-result-preview" class="space-y-4">
+          <div class="text-center py-14 px-4">
+            <div class="w-12 h-12 rounded-2xl bg-ivory-100 text-stone-400 flex items-center justify-center mx-auto mb-3">
+              <i data-lucide="calendar-check" class="w-6 h-6"></i>
+            </div>
+            <h3 class="font-bold text-stone-700 text-sm">추천된 주간 식단 미리보기</h3>
+            <p class="text-xs text-stone-500 mt-1.5 leading-relaxed">
+              왼쪽 채팅창에 원하는 메뉴를 입력하면,<br/>
+              <strong>① 최근 2주간 먹은 메뉴를 피하고</strong><br/>
+              <strong>② 핵심 식재료를 공유하는 월~금 식단표</strong>와<br/>
+              <strong>③ 통합 장보기 리스트</strong>가 이곳에 생성됩니다.
+            </p>
+          </div>
+        </div>
+
+        <!-- One-Click Apply Footer (Hidden until result exists) -->
+        <div id="ai-apply-footer" class="hidden pt-4 border-t border-ivory-200 space-y-2.5">
+          <div class="flex items-center justify-between text-xs text-stone-600">
+            <span>적용 대상 주간:</span>
+            <input type="date" id="ai-target-monday" class="px-2.5 py-1 rounded-lg border border-ivory-200 bg-ivory-50 font-semibold text-stone-800" />
+          </div>
+          <button onclick="applyAiPlanToWorkspace()" class="w-full py-3 rounded-xl bg-sage-600 hover:bg-sage-700 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 transition">
+            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+            <span>다음 주 달력 & 장보기에 한 번에 적용하기</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         VIEW 4: GROCERY CHECKLIST & BUDGET TRACKER (장보기 리스트 & 예산)
+    ====================================================================== -->
+    <section id="view-grocery" class="hidden space-y-5">
+      <!-- Budget Progress Header -->
+      <div class="bg-white rounded-2xl p-5 border border-ivory-200 handbook-shadow">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="font-serif text-xl font-bold text-stone-800">주간 장보기 체크리스트</h2>
+            <p class="text-xs text-stone-500 mt-1">마트/새벽배송에서 부부가 함께 실시간으로 체크하며 장을 보세요.</p>
+          </div>
+          <div class="flex items-center gap-3 bg-ivory-50 px-4 py-2.5 rounded-xl border border-ivory-200">
+            <div>
+              <span class="text-[11px] text-stone-500 block">예상 장보기 합계 / 주간 목표</span>
+              <div class="flex items-baseline gap-1.5">
+                <strong id="grocery-total-price" class="text-lg font-bold text-sage-700">0원</strong>
+                <span class="text-xs text-stone-400">/</span>
+                <input type="number" id="weekly-budget-input" value="45000" step="1000" onchange="updateWeeklyBudget(this.value)" class="w-20 text-xs font-semibold text-stone-700 bg-white border border-ivory-200 rounded px-1.5 py-0.5 text-right" />
+                <span class="text-xs text-stone-500">원</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="mt-4">
+          <div class="w-full h-2.5 bg-ivory-100 rounded-full overflow-hidden">
+            <div id="budget-progress-bar" class="h-full bg-sage-500 transition-all duration-300" style="width: 0%"></div>
+          </div>
+          <div class="flex justify-between text-[11px] text-stone-500 mt-1.5">
+            <span id="grocery-checked-summary">0개 완료 / 전체 0개</span>
+            <span id="budget-status-text" class="font-medium text-sage-700">예산 내 안정적입니다</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Custom Grocery Item Form -->
+      <form onsubmit="handleAddGrocery(event)" class="bg-white rounded-2xl p-3.5 border border-ivory-200 handbook-shadow flex flex-wrap sm:flex-nowrap items-center gap-2">
+        <select id="grocery-cat-input" class="px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-xs font-semibold text-stone-700">
+          <option value="meat">육류·수산·계란</option>
+          <option value="veggie">채소·두부</option>
+          <option value="etc">기타·부식</option>
+        </select>
+        <input type="text" id="grocery-name-input" placeholder="품목명 (예: 대패삼겹살 500g)" class="flex-1 min-w-[140px] px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-sm focus:outline-none focus:border-sage-500" required />
+        <input type="number" id="grocery-price-input" placeholder="예상금액(원)" step="100" class="w-28 px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-sm focus:outline-none focus:border-sage-500" />
+        <button type="submit" class="px-4 py-2 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-xs font-semibold transition shrink-0">
+          + 품목 추가
+        </button>
+        <button type="button" onclick="clearCheckedGroceries()" class="px-3 py-2 rounded-xl bg-ivory-100 hover:bg-ivory-200 text-stone-600 text-xs font-medium transition shrink-0">
+          완료 항목 비우기
+        </button>
+      </form>
+
+      <!-- 3-Column Category Lists -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Category 1: Meat / Seafood / Eggs -->
+        <div class="bg-white rounded-2xl p-4 border border-ivory-200 handbook-shadow">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-ivory-100">
+            <h3 class="font-bold text-sm text-stone-800 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-terracotta-500"></span>
+              육류·수산·계란
+            </h3>
+            <span id="cat-sum-meat" class="text-xs font-semibold text-stone-500">0원</span>
+          </div>
+          <ul id="grocery-list-meat" class="space-y-2"></ul>
+        </div>
+
+        <!-- Category 2: Veggies / Tofu -->
+        <div class="bg-white rounded-2xl p-4 border border-ivory-200 handbook-shadow">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-ivory-100">
+            <h3 class="font-bold text-sm text-stone-800 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-sage-500"></span>
+              채소·두부
+            </h3>
+            <span id="cat-sum-veggie" class="text-xs font-semibold text-stone-500">0원</span>
+          </div>
+          <ul id="grocery-list-veggie" class="space-y-2"></ul>
+        </div>
+
+        <!-- Category 3: Pantry / Etc -->
+        <div class="bg-white rounded-2xl p-4 border border-ivory-200 handbook-shadow">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-ivory-100">
+            <h3 class="font-bold text-sm text-stone-800 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              기타·부식
+            </h3>
+            <span id="cat-sum-etc" class="text-xs font-semibold text-stone-500">0원</span>
+          </div>
+          <ul id="grocery-list-etc" class="space-y-2"></ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- =====================================================================
+       MODAL 1: RECIPE DETAIL & 15-MIN ONE-PAN HANDBOOK MODAL
+  ====================================================================== -->
+  <div id="recipe-detail-modal" class="fixed inset-0 z-40 hidden bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-ivory-200 shadow-2xl">
+      <div class="p-5 sm:p-6 space-y-5">
+        <!-- Header -->
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2 mb-1.5">
+              <span id="modal-recipe-time" class="px-2.5 py-0.5 rounded-full bg-sage-100 text-sage-700 text-xs font-bold">12분 원팬</span>
+              <span id="modal-recipe-history" class="px-2.5 py-0.5 rounded-full bg-ivory-100 text-stone-600 text-xs font-medium">누적 0회</span>
+            </div>
+            <h3 id="modal-recipe-title" class="font-serif text-2xl font-bold text-stone-800">메뉴명</h3>
+          </div>
+          <button onclick="closeModal('recipe-detail-modal')" class="p-2 rounded-xl hover:bg-ivory-100 text-stone-500">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Ingredients Tags -->
+        <div>
+          <h4 class="text-xs font-bold text-stone-400 uppercase tracking-wider mb-2">핵심 식재료</h4>
+          <div id="modal-recipe-tags" class="flex flex-wrap gap-1.5"></div>
+        </div>
+
+        <!-- Ingredients & Seasoning Box -->
+        <div class="bg-ivory-50 rounded-2xl p-4 border border-ivory-200 space-y-3">
+          <div>
+            <h4 class="text-xs font-bold text-sage-700 flex items-center gap-1.5 mb-1">
+              <i data-lucide="shopping-bag" class="w-3.5 h-3.5"></i> 2인 기준 재료
+            </h4>
+            <p id="modal-recipe-ingredients" class="text-sm text-stone-700 leading-relaxed"></p>
+          </div>
+          <div class="pt-2.5 border-t border-ivory-200">
+            <h4 class="text-xs font-bold text-terracotta-600 flex items-center gap-1.5 mb-1">
+              <i data-lucide="flame" class="w-3.5 h-3.5"></i> 황금 양념 계량 (밥숟가락 기준)
+            </h4>
+            <p id="modal-recipe-seasoning" class="text-sm text-stone-700 leading-relaxed"></p>
+          </div>
+        </div>
+
+        <!-- Cooking Steps -->
+        <div>
+          <h4 class="text-xs font-bold text-stone-400 uppercase tracking-wider mb-2.5">퇴근 후 15분 조리 순서 (밥 취사 병행)</h4>
+          <ol id="modal-recipe-steps" class="space-y-2.5 text-sm text-stone-700"></ol>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="pt-3 border-t border-ivory-200 flex flex-wrap items-center justify-between gap-2">
+          <button id="modal-delete-plan-btn" onclick="removeMealFromCurrentDate()" class="hidden px-3.5 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold transition">
+            이 날짜 식단 비우기
+          </button>
+          <div class="flex items-center gap-2 ml-auto">
+            <input type="date" id="modal-assign-date" class="px-3 py-2 rounded-xl border border-ivory-200 bg-ivory-50 text-xs font-semibold text-stone-700" />
+            <button onclick="assignCurrentRecipeToDate()" class="px-4 py-2.5 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-xs font-semibold shadow-sm transition">
+              이 날짜에 식단 배정
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       MODAL 2: ASSIGN MEAL TO SPECIFIC DATE (날짜 클릭 시 식단 선택/추가)
+  ====================================================================== -->
+  <div id="assign-date-modal" class="fixed inset-0 z-40 hidden bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full max-h-[88vh] overflow-y-auto border border-ivory-200 shadow-2xl p-5 sm:p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="text-xs font-semibold text-sage-600">저녁 식단 배정</span>
+          <h3 id="assign-modal-date-title" class="font-serif text-xl font-bold text-stone-800">2026년 11월 24일 (화)</h3>
+        </div>
+        <button onclick="closeModal('assign-date-modal')" class="p-2 rounded-xl hover:bg-ivory-100 text-stone-500">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-stone-500">레시피 스택에서 고르거나, 비상 외식/새 메뉴를 바로 배정하세요.</p>
+
+      <!-- Quick Dining Out Option -->
+      <button onclick="assignDiningOutToSelectedDate()" class="w-full p-3 rounded-2xl bg-terracotta-50 hover:bg-terracotta-100 border border-terracotta-100 flex items-center justify-between text-left transition">
+        <div class="flex items-center gap-2.5">
+          <span class="text-lg">🍽️</span>
+          <div>
+            <div class="text-sm font-bold text-terracotta-600">주 1회 비상 외식 / 포장</div>
+            <div class="text-[11px] text-stone-500">야근·피곤한 날 외식 예산(3만 원) 활용</div>
+          </div>
+        </div>
+        <i data-lucide="plus-circle" class="w-5 h-5 text-terracotta-500"></i>
+      </button>
+
+      <!-- Stack List to Pick From -->
+      <div class="space-y-2 max-h-64 overflow-y-auto pr-1" id="assign-modal-stack-list">
+        <!-- Rendered by JS -->
+      </div>
+
+      <div class="pt-2 border-t border-ivory-100 flex justify-between items-center">
+        <button onclick="closeModal('assign-date-modal'); openNewRecipeModal();" class="text-xs font-semibold text-sage-700 hover:underline">
+          + 완전히 새로운 레시피 등록하기
+        </button>
+        <button onclick="closeModal('assign-date-modal')" class="px-3 py-1.5 rounded-xl bg-ivory-100 text-stone-600 text-xs font-medium">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       MODAL 3: ADD NEW RECIPE TO STACK
+  ====================================================================== -->
+  <div id="new-recipe-modal" class="fixed inset-0 z-40 hidden bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <form onsubmit="handleCreateRecipe(event)" class="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-ivory-200 shadow-2xl p-5 sm:p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-serif text-xl font-bold text-stone-800">새 원팬 레시피 스택 쌓기</h3>
+        <button type="button" onclick="closeModal('new-recipe-modal')" class="p-2 rounded-xl hover:bg-ivory-100 text-stone-500">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div class="col-span-2">
+          <label class="block text-xs font-semibold text-stone-600 mb-1">메뉴명 *</label>
+          <input type="text" id="new-rec-title" placeholder="예: 차돌박이 숙주 볶음" class="w-full px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-sm" required />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-stone-600 mb-1">조리 시간(분)</label>
+          <input type="number" id="new-rec-time" value="15" min="5" max="60" class="w-full px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-sm" required />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-stone-600 mb-1">핵심 식재료 태그 (쉼표로 구분) *</label>
+        <input type="text" id="new-rec-tags" placeholder="예: 차돌박이, 숙주, 양파, 대파" class="w-full px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-sm" required />
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-stone-600 mb-1">2인 기준 상세 재료</label>
+        <input type="text" id="new-rec-ingredients" placeholder="예: 차돌박이 250g, 숙주 1봉지, 양파 반 개, 다진 마늘 1스푼" class="w-full px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-sm" />
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-stone-600 mb-1">양념 비율</label>
+        <input type="text" id="new-rec-seasoning" placeholder="예: 굴소스 1.5스푼, 진간장 1스푼, 맛술 1스푼, 후추" class="w-full px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-sm" />
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-stone-600 mb-1">조리 순서 (줄바꿈으로 구분)</label>
+        <textarea id="new-rec-steps" rows="3" placeholder="1. 팬에 차돌박이와 다진 마늘을 먼저 볶는다.&#10;2. 숙주와 양파를 넣고 센 불에 빠르게 볶는다.&#10;3. 양념을 둘러 1분간 볶아 마무리한다." class="w-full px-3 py-2 rounded-xl bg-ivory-50 border border-ivory-200 text-sm"></textarea>
+      </div>
+
+      <div class="pt-2 flex justify-end gap-2">
+        <button type="button" onclick="closeModal('new-recipe-modal')" class="px-4 py-2.5 rounded-xl bg-ivory-100 text-stone-600 text-xs font-semibold">취소</button>
+        <button type="submit" class="px-5 py-2.5 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-xs font-semibold shadow-sm">스택에 저장하기</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- =====================================================================
+       MODAL 4: COUPLE REALTIME SYNC ROOM CODE MODAL
+  ====================================================================== -->
+  <div id="room-sync-modal" class="fixed inset-0 z-40 hidden bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full border border-ivory-200 shadow-2xl p-5 sm:p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-serif text-xl font-bold text-stone-800">부부 공동 실시간 동기화</h3>
+        <button onclick="closeModal('room-sync-modal')" class="p-2 rounded-xl hover:bg-ivory-100 text-stone-500">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-stone-600 leading-relaxed">
+        남편과 아내가 같은 <strong>부부 공유 코드</strong>를 입력하면, 한쪽이 식단을 수정하거나 장보기 체크를 할 때 다른 한쪽의 스마트폰/PC에도 즉시 실시간 반영됩니다.
+      </p>
+
+      <div class="bg-ivory-50 p-3.5 rounded-2xl border border-ivory-200 space-y-2">
+        <label class="block text-xs font-bold text-stone-700">우리 부부 공유 코드 (영문/숫자)</label>
+        <div class="flex gap-2">
+          <input type="text" id="room-code-input" value="OURHOME" class="flex-1 px-3 py-2 rounded-xl bg-white border border-ivory-200 text-sm font-bold uppercase tracking-wider text-stone-800" />
+          <button onclick="changeCoupleRoom()" class="px-4 py-2 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-xs font-semibold">연결하기</button>
+        </div>
+        <p class="text-[11px] text-stone-400">예: KIMLEE2026, SWEET502 등 둘만의 코드를 정해 입력하세요.</p>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-ivory-100">
+        <span class="text-xs text-stone-500">배우자에게 링크 복사해서 보내기</span>
+        <button onclick="copyInviteLink()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-terracotta-50 hover:bg-terracotta-100 text-terracotta-600 text-xs font-semibold transition">
+          <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+          <span>초대 링크 복사</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase & Application Logic -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // -------------------------------------------------------------------------
+    // 1. DEFAULT SEED DATA (15-Min One-Pan Recipes, Weekly Plan, Grocery List)
+    // -------------------------------------------------------------------------
+    const DEFAULT_RECIPES = [
+      {
+        id: 'rec-1',
+        title: '대패삼겹 양배추 간장볶음',
+        cookTime: 12,
+        tags: ['대패삼겹', '양배추', '양파', '대파'],
+        ingredients: '냉동 대패삼겹살 250g, 채 썬 양배추 크게 두 줌, 양파 반 개, 대파 조금, 다진 마늘 1스푼',
+        seasoning: '굴소스 1.5스푼, 진간장 1스푼, 맛술(또는 물) 2스푼, 후추 톡톡',
+        steps: [
+          '쌀을 씻어 전기밥솥 취사 버튼을 누릅니다.',
+          '예열된 팬에 기름 없이 냉동 대패삼겹살과 다진 마늘을 넣고 중불에서 4분간 볶아 기름을 냅니다.',
+          '채 썬 양파와 양배추를 한꺼번에 넣고 숨이 죽을 때까지 센 불에 4분간 볶습니다.',
+          '양념을 팬 가장자리에 둘러 붓고 센 불로 2분간 빠르게 볶아 불향을 입혀 완성합니다.'
+        ]
+      },
+      {
+        id: 'rec-2',
+        title: '원팬 두부김치 제육볶음',
+        cookTime: 15,
+        tags: ['앞다리살', '김치', '두부', '양파'],
+        ingredients: '돼지 앞다리살 300g, 신김치 1컵(가위질), 양파 반 개, 두부 반 모, 대파 조금',
+        seasoning: '고추장 1.5스푼, 고춧가루 1스푼, 진간장 1.5스푼, 설탕 1스푼, 다진 마늘 1스푼, 물 4스푼',
+        steps: [
+          '쌀을 씻어 취사를 시작한 뒤, 팬 한쪽에 기름을 두르고 앞다리살과 다진 마늘을 4분간 볶습니다.',
+          '고기 겉면이 익으면 김치, 양파, 양념장을 모두 넣고 중불에서 5분간 볶습니다.',
+          '볶아진 제육을 팬 한쪽으로 밀어두고 빈 공간에 도톰하게 썬 두부를 올려 양념 국물에 3분간 앞뒤로 지져 완성합니다.'
+        ]
+      },
+      {
+        id: 'rec-3',
+        title: '양배추 계란 참치덮밥',
+        cookTime: 10,
+        tags: ['양배추', '계란', '참치캔', '대파'],
+        ingredients: '채 썬 양배추 크게 두 줌, 계란 3알, 참치캔 1개(기름 뺀 것), 대파 조금',
+        seasoning: '진간장 1.5스푼, 올리고당 1스푼, 물 3스푼, 참기름 1스푼 (또는 돈까스소스+마요네즈)',
+        steps: [
+          '취사 버튼을 누른 뒤 볼에 채 썬 양배추, 기름 뺀 참치, 계란 3알, 소금 한 꼬집을 넣고 잘 섞습니다.',
+          '기름 두른 팬에 반죽을 동그랗게 부어 중약불에서 앞뒤로 각 3분씩 노릇하게 부칩니다.',
+          '갓 지은 밥 위에 양배추 계란전을 통째로 올리고 양념장이나 소스를 뿌려 완성합니다.'
+        ]
+      },
+      {
+        id: 'rec-4',
+        title: '두부 애호박 고추장찌개',
+        cookTime: 15,
+        tags: ['두부', '애호박', '앞다리살', '대파'],
+        ingredients: '남은 두부 반 모, 애호박 반 개, 돼지 앞다리살 100g, 양파 1/4개, 대파, 물 450ml',
+        seasoning: '고추장 1.5스푼, 된장 0.5스푼, 고춧가루 1스푼, 국간장 1스푼, 다진 마늘 1스푼',
+        steps: [
+          '취사 버튼을 누른 뒤 냄비에 참기름 1스푼을 두르고 앞다리살과 고추장, 된장을 먼저 1분간 볶습니다.',
+          '물 450ml를 붓고 깍둑썰기한 애호박, 양파, 다진 마늘을 넣어 7분간 팔팔 끓입니다.',
+          '마지막으로 썬 두부와 대파를 넣고 3분 더 끓여내면 칼칼한 찌개가 완성됩니다.'
+        ]
+      },
+      {
+        id: 'rec-5',
+        title: '대패삼겹 숙주볶음',
+        cookTime: 12,
+        tags: ['대패삼겹', '숙주', '양파', '대파'],
+        ingredients: '냉동 대패삼겹살 250g, 숙주 1봉지(250g), 양파 반 개, 다진 마늘 1스푼',
+        seasoning: '굴소스 1.5스푼, 진간장 1스푼, 맛술 1스푼, 후추 넉넉히',
+        steps: [
+          '밥솥 취사를 누르고 팬에 냉동 대패삼겹살과 다진 마늘을 넣어 바삭하게 볶습니다.',
+          '기름이 나오면 채 썬 양파를 넣고 2분간 볶습니다.',
+          '깨끗이 씻은 숙주와 양념을 넣고 센 불에서 1분 30초만 아삭하게 볶아 마무리합니다.'
+        ]
+      },
+      {
+        id: 'rec-6',
+        title: '10분 순두부 참치김치찌개',
+        cookTime: 12,
+        tags: ['순두부', '참치캔', '김치', '계란'],
+        ingredients: '순두부 1봉, 신김치 1컵, 참치캔 1개, 계란 1알, 대파, 물 350ml',
+        seasoning: '고춧가루 1스푼, 진간장 1스푼, 다진 마늘 0.5스푼, 설탕 0.5스푼',
+        steps: [
+          '냄비에 참치캔 기름과 신김치를 넣고 2분간 달달 볶아 감칠맛을 냅니다.',
+          '물 350ml와 양념, 참치 살코기를 넣고 5분간 끓입니다.',
+          '순두부를 큼직하게 숟가락으로 떠 넣고 계란 1알과 대파를 올려 3분 더 끓입니다.'
+        ]
+      }
+    ];
+
+    const DEFAULT_GROCERIES = [
+      { id: 'g-1', category: 'meat', name: '냉동 대패삼겹살 500g (2회분)', price: 8000, checked: false },
+      { id: 'g-2', category: 'meat', name: '돼지 앞다리살 400g (볶음/찌개용)', price: 6000, checked: false },
+      { id: 'g-3', category: 'meat', name: '특란 15구 1판', price: 4500, checked: false },
+      { id: 'g-4', category: 'meat', name: '살코기 참치캔 150g 1캔', price: 2500, checked: false },
+      { id: 'g-5', category: 'veggie', name: '양배추 반 통 소포장', price: 3000, checked: false },
+      { id: 'g-6', category: 'veggie', name: '양파 3개입 소포장', price: 3000, checked: false },
+      { id: 'g-7', category: 'veggie', name: '대파 1단 (썰어서 냉동보관)', price: 2500, checked: false },
+      { id: 'g-8', category: 'veggie', name: '애호박 1개 + 찌개용 두부 1모', price: 3500, checked: false },
+      { id: 'g-9', category: 'etc', name: '조미김 1묶음 & 볶음김치 소포장', price: 7000, checked: false }
+    ];
+
+    // Helper: Format YYYY-MM-DD in local time
+    function formatDateStr(dateObj) {
+      const y = dateObj.getFullYear();
+      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const d = String(dateObj.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function addDays(dateObj, days) {
+      const copy = new Date(dateObj);
+      copy.setDate(copy.getDate() + days);
+      return copy;
+    }
+
+    // Build initial sample calendar around current week so user sees rich data right away
+    function createInitialPlans() {
+      const today = new Date();
+      const dayOfWeek = today.getDay(); // 0(Sun) ~ 6(Sat)
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const thisMonday = addDays(today, mondayOffset);
+      const lastMonday = addDays(thisMonday, -7);
+
+      const plans = {};
+      // Last week history (to demonstrate "recently eaten" duplicate warning in Recipe Stack)
+      plans[formatDateStr(addDays(lastMonday, 0))] = { type: 'recipe', recipeId: 'rec-5', title: '대패삼겹 숙주볶음' };
+      plans[formatDateStr(addDays(lastMonday, 2))] = { type: 'recipe', recipeId: 'rec-6', title: '10분 순두부 참치김치찌개' };
+
+      // This week's meal plan
+      plans[formatDateStr(addDays(thisMonday, 0))] = { type: 'recipe', recipeId: 'rec-1', title: '대패삼겹 양배추 간장볶음' };
+      plans[formatDateStr(addDays(thisMonday, 1))] = { type: 'recipe', recipeId: 'rec-2', title: '원팬 두부김치 제육볶음' };
+      plans[formatDateStr(addDays(thisMonday, 2))] = { type: 'recipe', recipeId: 'rec-3', title: '양배추 계란 참치덮밥' };
+      plans[formatDateStr(addDays(thisMonday, 3))] = { type: 'recipe', recipeId: 'rec-4', title: '두부 애호박 고추장찌개' };
+      plans[formatDateStr(addDays(thisMonday, 4))] = { type: 'dining_out', title: '비상 외식 / 포장 (주 1회)' };
+      return plans;
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. APPLICATION STATE & FIREBASE REALTIME SYNC
+    // -------------------------------------------------------------------------
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialRoom = (urlParams.get('room') || 'OURHOME').toUpperCase().replace(/[^A-Z0-9_-]/g, '') || 'OURHOME';
+
+    const state = {
+      roomCode: initialRoom,
+      calendarMode: 'week', // 'week' | 'month'
+      calendarOffset: 0,    // 0 = current week/month
+      stackFilter: 'all',   // 'all' | 'safe' | 'recent'
+      selectedIngredientTag: null,
+      selectedDateForModal: null,
+      selectedRecipeForModal: null,
+      latestAiPlan: null,
+      // Synced Workspace Data
+      data: {
+        recipes: [...DEFAULT_RECIPES],
+        plans: createInitialPlans(),
+        groceries: [...DEFAULT_GROCERIES],
+        weeklyBudget: 45000
+      }
+    };
+
+    let db = null;
+    let auth = null;
+    let currentUser = null;
+    let unsubscribeRoom = null;
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'couple-meal-handbook';
+
+    async function initFirebase() {
+      try {
+        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+          setSyncBadge('offline', '로컬 모드 (미리보기)');
+          renderAll();
+          return;
+        }
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+        currentUser = auth.currentUser;
+        subscribeToCoupleRoom(state.roomCode);
+      } catch (err) {
+        console.error('Firebase init fallback:', err);
+        setSyncBadge('offline', '로컬 모드 작동 중');
+        renderAll();
+      }
+    }
+
+    function subscribeToCoupleRoom(roomCode) {
+      if (!db || !currentUser) return;
+      if (unsubscribeRoom) unsubscribeRoom();
+
+      state.roomCode = roomCode;
+      document.getElementById('current-room-label').textContent = roomCode;
+      document.getElementById('room-code-input').value = roomCode;
+
+      // RULE 1: Public shared room path under /artifacts/{appId}/public/data/couple_rooms/{roomCode}
+      const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'couple_rooms', roomCode);
+
+      unsubscribeRoom = onSnapshot(roomDocRef, async (snapshot) => {
+        if (snapshot.exists()) {
+          const remote = snapshot.data();
+          state.data = {
+            recipes: Array.isArray(remote.recipes) && remote.recipes.length ? remote.recipes : [...DEFAULT_RECIPES],
+            plans: remote.plans || {},
+            groceries: Array.isArray(remote.groceries) ? remote.groceries : [],
+            weeklyBudget: typeof remote.weeklyBudget === 'number' ? remote.weeklyBudget : 45000
+          };
+          setSyncBadge('online', '부부 실시간 동기화됨');
+          renderAll();
+        } else {
+          // Initialize new shared room with sample data
+          await saveWorkspaceToCloud();
+          setSyncBadge('online', '새 공유방 생성됨');
+          renderAll();
+        }
+      }, (error) => {
+        console.error('Firestore snapshot error:', error);
+        setSyncBadge('offline', '동기화 일시 중단');
+        renderAll();
+      });
+    }
+
+    async function saveWorkspaceToCloud() {
+      renderAll(); // Optimistic immediate UI update
+      if (!db || !currentUser) return;
+      try {
+        const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'couple_rooms', state.roomCode);
+        await setDoc(roomDocRef, {
+          recipes: state.data.recipes,
+          plans: state.data.plans,
+          groceries: state.data.groceries,
+          weeklyBudget: state.data.weeklyBudget,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        console.error('Save error:', err);
+        showToast('저장 중 네트워크 지연이 발생했습니다.', 'error');
+      }
+    }
+
+    function setSyncBadge(status, text) {
+      const dot = document.getElementById('sync-dot');
+      const label = document.getElementById('sync-text');
+      label.textContent = text;
+      if (status === 'online') {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. RECIPE HISTORY & DUPLICATE PREVENTION ANALYTICS
+    // -------------------------------------------------------------------------
+    function getRecipeStats(recipeId) {
+      const todayStr = formatDateStr(new Date());
+      const todayTime = new Date(todayStr).getTime();
+      let count = 0;
+      let latestDateStr = null;
+
+      Object.entries(state.data.plans).forEach(([dateStr, plan]) => {
+        if (plan && plan.type === 'recipe' && plan.recipeId === recipeId) {
+          count += 1;
+          if (!latestDateStr || dateStr > latestDateStr) {
+            latestDateStr = dateStr;
+          }
+        }
+      });
+
+      if (!latestDateStr) {
+        return { count: 0, latestDateStr: null, daysAgo: null, isRecent: false, label: '아직 안 먹음 (추천!)' };
+      }
+
+      const latestTime = new Date(latestDateStr).getTime();
+      const diffDays = Math.round((todayTime - latestTime) / (1000 * 60 * 60 * 24));
+
+      let label = '';
+      let isRecent = false;
+      if (diffDays < 0) {
+        label = `${Math.abs(diffDays)}일 뒤 예정됨`;
+        isRecent = true;
+      } else if (diffDays === 0) {
+        label = '오늘 저녁 메뉴';
+        isRecent = true;
+      } else if (diffDays <= 14) {
+        label = `${diffDays}일 전 먹음 (중복 주의)`;
+        isRecent = true;
+      } else {
+        label = `${diffDays}일 전 먹음 (다시 먹을 때!)`;
+        isRecent = false;
+      }
+
+      return { count, latestDateStr, daysAgo: diffDays, isRecent, label };
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. RENDERING: CALENDAR VIEW (WEEK & MONTH)
+    // -------------------------------------------------------------------------
+    function renderCalendar() {
+      const grid = document.getElementById('calendar-days-grid');
+      const titleEl = document.getElementById('calendar-period-title');
+      const today = new Date();
+      const todayStr = formatDateStr(today);
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+      let datesToRender = [];
+
+      if (state.calendarMode === 'week') {
+        const dayOfWeek = today.getDay();
+        const sundayOffset = -dayOfWeek + (state.calendarOffset * 7);
+        const startSunday = addDays(today, sundayOffset);
+        const endSaturday = addDays(startSunday, 6);
+
+        titleEl.textContent = `${startSunday.getMonth() + 1}월 ${startSunday.getDate()}일 ~ ${endSaturday.getMonth() + 1}월 ${endSaturday.getDate()}일`;
+        for (let i = 0; i < 7; i++) {
+          datesToRender.push({ date: addDays(startSunday, i), isCurrentMonth: true });
+        }
+      } else {
+        const targetMonthDate = new Date(today.getFullYear(), today.getMonth() + state.calendarOffset, 1);
+        const year = targetMonthDate.getFullYear();
+        const month = targetMonthDate.getMonth();
+        titleEl.textContent = `${year}년 ${month + 1}월`;
+
+        const firstDayOfWeek = targetMonthDate.getDay();
+        const startDate = addDays(targetMonthDate, -firstDayOfWeek);
+        for (let i = 0; i < 35; i++) {
+          const d = addDays(startDate, i);
+          datesToRender.push({ date: d, isCurrentMonth: d.getMonth() === month });
+        }
+      }
+
+      grid.innerHTML = datesToRender.map(({ date, isCurrentMonth }) => {
+        const dateStr = formatDateStr(date);
+        const isToday = dateStr === todayStr;
+        const plan = state.data.plans[dateStr];
+        const dayIdx = date.getDay();
+        const isWeekend = dayIdx === 0 || dayIdx === 6;
+
+        let cardBody = '';
+        if (plan) {
+          if (plan.type === 'dining_out') {
+            cardBody = `
+              <div onclick="event.stopPropagation(); clearSpecificDate('${dateStr}')" class="mt-2 p-2.5 rounded-xl bg-terracotta-50 border border-terracotta-100 cursor-pointer hover:bg-terracotta-100/70 transition group">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold text-terracotta-600">🍽️ 외식/포장</span>
+                  <span class="text-[10px] text-terracotta-400 opacity-0 group-hover:opacity-100">삭제</span>
+                </div>
+                <p class="text-xs font-semibold text-stone-800 mt-1 line-clamp-2">${escapeHtml(plan.title)}</p>
+              </div>
+            `;
+          } else {
+            const recipe = state.data.recipes.find(r => r.id === plan.recipeId);
+            const cookTime = recipe ? `${recipe.cookTime}분` : '15분';
+            const tagsHtml = recipe
+              ? recipe.tags.slice(0, 3).map(t => `<span class="px-1.5 py-0.5 rounded bg-white/90 text-[10px] text-sage-700 font-medium border border-sage-100">#${escapeHtml(t)}</span>`).join('')
+              : '';
+
+            cardBody = `
+              <div onclick="event.stopPropagation(); openRecipeDetail('${plan.recipeId}', '${dateStr}')" class="mt-2 p-2.5 rounded-xl bg-sage-50 border border-sage-200/80 cursor-pointer hover:bg-sage-100/80 transition">
+                <div class="flex items-center justify-between gap-1">
+                  <span class="text-[10px] font-bold text-sage-700 bg-white px-1.5 py-0.5 rounded-md border border-sage-100">⏱ ${cookTime} 원팬</span>
+                  <span class="text-[10px] text-stone-400">🍚 취사</span>
+                </div>
+                <p class="text-xs sm:text-sm font-bold text-stone-800 mt-1.5 leading-snug">${escapeHtml(plan.title)}</p>
+                <div class="flex flex-wrap gap-1 mt-2">${tagsHtml}</div>
+              </div>
+            `;
+          }
+        } else {
+          cardBody = `
+            <div class="mt-2 h-16 md:h-24 rounded-xl border border-dashed border-ivory-200 flex flex-col items-center justify-center text-stone-400 hover:border-sage-400 hover:text-sage-600 hover:bg-sage-50/30 transition">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span class="text-[11px] mt-0.5">${isWeekend ? '주말 자유식' : '저녁 메뉴 추가'}</span>
+            </div>
+          `;
+        }
+
+        return `
+          <div onclick="openAssignDateModal('${dateStr}')" class="p-3 min-h-[120px] md:min-h-[168px] cursor-pointer transition hover:bg-ivory-50/70 ${!isCurrentMonth ? 'opacity-40 bg-ivory-50/40' : ''} ${isToday ? 'bg-amber-50/40 ring-1 ring-inset ring-amber-300/60' : ''}">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-bold ${isToday ? 'w-6 h-6 rounded-full bg-terracotta-500 text-white flex items-center justify-center' : dayIdx === 0 ? 'text-terracotta-600' : dayIdx === 6 ? 'text-sage-700' : 'text-stone-700'}">
+                  ${date.getDate()}
+                </span>
+                <span class="text-[11px] text-stone-400 md:hidden">(${dayNames[dayIdx]})</span>
+              </div>
+              ${isToday ? '<span class="text-[10px] font-bold text-terracotta-600">TODAY</span>' : ''}
+            </div>
+            ${cardBody}
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. RENDERING: RECIPE STACK ARCHIVE
+    // -------------------------------------------------------------------------
+    function renderRecipeStack() {
+      const grid = document.getElementById('recipe-stack-grid');
+      const tagBar = document.getElementById('stack-ingredient-filters');
+      document.getElementById('stack-count-pill').textContent = state.data.recipes.length;
+
+      // Collect unique ingredient tags
+      const allTags = new Set();
+      state.data.recipes.forEach(r => r.tags.forEach(t => allTags.add(t)));
+
+      tagBar.innerHTML = `
+        <button onclick="setIngredientTagFilter(null)" class="shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition ${!state.selectedIngredientTag ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-ivory-200 hover:bg-ivory-100'}">
+          전체 재료
+        </button>
+        ${Array.from(allTags).map(tag => `
+          <button onclick="setIngredientTagFilter('${escapeHtml(tag)}')" class="shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition ${state.selectedIngredientTag === tag ? 'bg-sage-600 text-white border-sage-600' : 'bg-white text-stone-600 border-ivory-200 hover:bg-ivory-100'}">
+            #${escapeHtml(tag)}
+          </button>
+        `).join('')}
+      `;
+
+      // Enrich recipes with history stats & sort by least recently eaten first
+      let enriched = state.data.recipes.map(r => ({
+        ...r,
+        stats: getRecipeStats(r.id)
+      }));
+
+      if (state.stackFilter === 'safe') {
+        enriched = enriched.filter(r => !r.stats.isRecent);
+      } else if (state.stackFilter === 'recent') {
+        enriched = enriched.filter(r => r.stats.isRecent);
+      }
+
+      if (state.selectedIngredientTag) {
+        enriched = enriched.filter(r => r.tags.includes(state.selectedIngredientTag));
+      }
+
+      // Sort: never eaten first, then oldest eaten date
+      enriched.sort((a, b) => {
+        if (!a.stats.latestDateStr && !b.stats.latestDateStr) return 0;
+        if (!a.stats.latestDateStr) return -1;
+        if (!b.stats.latestDateStr) return 1;
+        return a.stats.latestDateStr.localeCompare(b.stats.latestDateStr);
+      });
+
+      if (enriched.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full bg-white rounded-2xl p-10 text-center border border-ivory-200">
+            <p class="text-sm text-stone-500">조건에 맞는 레시피 카드가 없습니다.</p>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = enriched.map(r => {
+        const badgeClass = r.stats.isRecent
+          ? 'bg-terracotta-50 text-terracotta-600 border-terracotta-100'
+          : 'bg-sage-50 text-sage-700 border-sage-100';
+
+        return `
+          <div onclick="openRecipeDetail('${r.id}')" class="stack-card bg-white rounded-2xl p-4 border border-ivory-200 handbook-shadow cursor-pointer flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between gap-2 mb-2.5">
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badgeClass}">
+                  ${r.stats.label}
+                </span>
+                <span class="text-[11px] font-semibold text-stone-400">누적 ${r.stats.count}회</span>
+              </div>
+              <h3 class="font-serif text-lg font-bold text-stone-800">${escapeHtml(r.title)}</h3>
+              <p class="text-xs text-stone-500 mt-1 line-clamp-2">${escapeHtml(r.ingredients)}</p>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-ivory-100 flex items-center justify-between gap-2">
+              <div class="flex flex-wrap gap-1">
+                ${r.tags.map(t => `<span class="px-2 py-0.5 rounded-md bg-ivory-100 text-stone-600 text-[11px] font-medium">#${escapeHtml(t)}</span>`).join('')}
+              </div>
+              <span class="shrink-0 text-xs font-bold text-sage-700 flex items-center gap-1">
+                <i data-lucide="clock" class="w-3.5 h-3.5"></i> ${r.cookTime}분
+              </span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. RENDERING: GROCERY CHECKLIST & BUDGET
+    // -------------------------------------------------------------------------
+    function renderGroceries() {
+      const lists = {
+        meat: document.getElementById('grocery-list-meat'),
+        veggie: document.getElementById('grocery-list-veggie'),
+        etc: document.getElementById('grocery-list-etc')
+      };
+      Object.values(lists).forEach(el => { el.innerHTML = ''; });
+
+      const catSums = { meat: 0, veggie: 0, etc: 0 };
+      let totalPrice = 0;
+      let checkedCount = 0;
+
+      state.data.groceries.forEach(item => {
+        const price = Number(item.price) || 0;
+        totalPrice += price;
+        if (catSums[item.category] !== undefined) catSums[item.category] += price;
+        if (item.checked) checkedCount += 1;
+
+        const targetList = lists[item.category] || lists.etc;
+        const li = document.createElement('li');
+        li.className = `flex items-center justify-between gap-2 p-2.5 rounded-xl border transition ${item.checked ? 'bg-ivory-50/70 border-ivory-100 opacity-60' : 'bg-ivory-50 border-ivory-200'}`;
+        li.innerHTML = `
+          <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
+            <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleGroceryItem('${item.id}')" class="w-4 h-4 accent-sage-600 rounded cursor-pointer shrink-0" />
+            <span class="text-xs sm:text-sm font-medium truncate ${item.checked ? 'line-through text-stone-400' : 'text-stone-800'}">${escapeHtml(item.name)}</span>
+          </label>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="text-xs font-semibold text-stone-500">${price ? price.toLocaleString() + '원' : ''}</span>
+            <button onclick="deleteGroceryItem('${item.id}')" class="text-stone-300 hover:text-red-500 p-1" title="삭제">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+        targetList.appendChild(li);
+      });
+
+      document.getElementById('cat-sum-meat').textContent = `${catSums.meat.toLocaleString()}원`;
+      document.getElementById('cat-sum-veggie').textContent = `${catSums.veggie.toLocaleString()}원`;
+      document.getElementById('cat-sum-etc').textContent = `${catSums.etc.toLocaleString()}원`;
+
+      const budget = state.data.weeklyBudget || 45000;
+      document.getElementById('weekly-budget-input').value = budget;
+      document.getElementById('grocery-total-price').textContent = `${totalPrice.toLocaleString()}원`;
+      document.getElementById('grocery-count-pill').textContent = state.data.groceries.filter(g => !g.checked).length;
+      document.getElementById('grocery-checked-summary').textContent = `${checkedCount}개 완료 / 전체 ${state.data.groceries.length}개`;
+
+      const pct = Math.min(100, Math.round((totalPrice / budget) * 100));
+      const bar = document.getElementById('budget-progress-bar');
+      const statusText = document.getElementById('budget-status-text');
+      bar.style.width = `${pct}%`;
+
+      if (totalPrice > budget) {
+        bar.className = 'h-full bg-terracotta-500 transition-all duration-300';
+        statusText.className = 'font-semibold text-terracotta-600';
+        statusText.textContent = `목표 예산보다 ${(totalPrice - budget).toLocaleString()}원 초과`;
+      } else {
+        bar.className = 'h-full bg-sage-500 transition-all duration-300';
+        statusText.className = 'font-medium text-sage-700';
+        statusText.textContent = `목표 예산 내 (${(budget - totalPrice).toLocaleString()}원 여유)`;
+      }
+
+      lucide.createIcons();
+    }
+
+    function renderAll() {
+      renderCalendar();
+      renderRecipeStack();
+      renderGroceries();
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. GEMINI AI MEAL & GROCERY PLANNER (Structured Output + Exponential Backoff)
+    // -------------------------------------------------------------------------
+    window.fillAiPrompt = function(text) {
+      document.getElementById('ai-prompt-input').value = text;
+      document.getElementById('ai-prompt-input').focus();
+    };
+
+    window.handleAiSubmit = async function(e) {
+      e.preventDefault();
+      const inputEl = document.getElementById('ai-prompt-input');
+      const userPrompt = inputEl.value.trim();
+      if (!userPrompt) return;
+
+      appendChatBubble('user', userPrompt);
+      inputEl.value = '';
+
+      const submitBtn = document.getElementById('ai-submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span><span>설계 중...</span>`;
+
+      const loadingId = appendChatBubble('ai', '최근 2주간 드신 식단 내역을 확인하고, 식재료가 100% 소진되는 다음 주 식단표와 장보기 리스트를 짜고 있어요...');
+
+      try {
+        // Gather recent meals (within 14 days) to avoid repetition
+        const recentMeals = state.data.recipes
+          .map(r => ({ title: r.title, stats: getRecipeStats(r.id) }))
+          .filter(item => item.stats.isRecent)
+          .map(item => `${item.title} (${item.stats.label})`);
+
+        const existingStackTitles = state.data.recipes.map(r => r.title);
+
+        const systemInstruction = `
+당신은 2인 맞벌이 부부의 식비를 월 60만 원에서 30만 원대로 줄여주는 '집밥 식단 & 식재료 제로웨이스트 셰프'입니다.
+다음 규칙을 반드시 지켜서 다음 주 평일(월~금, 5일치) 저녁 식단과 통합 장보기 리스트를 JSON으로 생성하세요:
+1. 사용자가 요청한 희망 메뉴 1~2개를 반드시 포함합니다.
+2. 최근 먹은 메뉴 목록(${recentMeals.length ? recentMeals.join(', ') : '없음'})과 메뉴가 겹치지 않게 회피합니다.
+3. 식재료가 냉장고에서 상하지 않도록 육류 2종 + 채소 4~5종을 공유하는 '원소스 멀티유즈' 구조로 나머지 요일을 구성합니다.
+4. 밥은 매끼 새로 짓는 가정이므로, 모든 집밥 메뉴는 퇴근 후 15분 내외로 끝나는 초간단 원팬(One-pan) 레시피로 제안하세요. (금요일은 필요시 주 1회 비상 외식/포장 옵션 활용 가능)
+5. 기존 레시피 스택 목록(${existingStackTitles.join(', ')})에 있는 메뉴를 활용해도 좋고, 새로운 15분 원팬 메뉴를 추가해도 좋습니다.
+6. 장보기 리스트는 2인 1주일 분량으로 소포장 기준 현실적인 한국 마트 가격(원)을 책정해 총합 45,000원 내외가 되도록 맞춥니다.
+        `.trim();
+
+        const apiKey = ""; // Canvas environment provides key automatically
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+        const payload = {
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                chefComment: { type: "STRING", description: "부부에게 전하는 친근한 식단 설계 요약 설명 (2~3문장)" },
+                sharedIngredientsSummary: {
+                  type: "ARRAY",
+                  items: { type: "STRING" },
+                  description: "이번 주 식단이 공유하는 핵심 식재료 5~7가지"
+                },
+                weekPlan: {
+                  type: "ARRAY",
+                  description: "월요일(0)부터 금요일(4)까지 5일치 저녁 식단",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      dayOffset: { type: "INTEGER", description: "0=월요일, 1=화요일, 2=수요일, 3=목요일, 4=금요일" },
+                      dayLabel: { type: "STRING", description: "월요일, 화요일 등" },
+                      isDiningOut: { type: "BOOLEAN", description: "비상 외식/포장 여부" },
+                      title: { type: "STRING", description: "메뉴명" },
+                      cookTime: { type: "INTEGER", description: "조리 시간(분)" },
+                      tags: { type: "ARRAY", items: { type: "STRING" } },
+                      ingredients: { type: "STRING", description: "2인 기준 상세 재료" },
+                      seasoning: { type: "STRING", description: "양념 계량" },
+                      steps: { type: "ARRAY", items: { type: "STRING" }, description: "3~4단계 초간단 조리법" }
+                    },
+                    required: ["dayOffset", "dayLabel", "isDiningOut", "title", "cookTime", "tags", "ingredients", "seasoning", "steps"]
+                  }
+                },
+                groceryList: {
+                  type: "ARRAY",
+                  description: "이번 주 식단 전용 통합 장보기 리스트",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      category: { type: "STRING", description: "반드시 'meat', 'veggie', 'etc' 중 하나" },
+                      name: { type: "STRING", description: "품목명 및 소분 용량" },
+                      price: { type: "INTEGER", description: "예상 가격(원)" }
+                    },
+                    required: ["category", "name", "price"]
+                  }
+                }
+              },
+              required: ["chefComment", "sharedIngredientsSummary", "weekPlan", "groceryList"]
+            }
+          }
+        };
+
+        const resultData = await fetchWithBackoff(apiUrl, payload);
+        const text = resultData?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error('AI 응답이 비어 있습니다.');
+
+        const parsedPlan = JSON.parse(text);
+        state.latestAiPlan = parsedPlan;
+
+        updateChatBubble(loadingId, parsedPlan.chefComment);
+        renderAiPreviewCard(parsedPlan);
+
+      } catch (err) {
+        console.error('AI generation error:', err);
+        updateChatBubble(loadingId, '식단 추천 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요!');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<span>추천받기</span><i data-lucide="send" class="w-4 h-4"></i>`;
+        lucide.createIcons();
+      }
+    };
+
+    async function fetchWithBackoff(url, payload, maxRetries = 4) {
+      let delay = 1000;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return await res.json();
+        } catch (err) {
+          if (attempt === maxRetries) throw err;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          delay *= 2;
+        }
+      }
+    }
+
+    function appendChatBubble(sender, text) {
+      const container = document.getElementById('ai-chat-messages');
+      const id = 'msg-' + Date.now() + Math.random().toString(36).slice(2, 6);
+      const div = document.createElement('div');
+      div.id = id;
+
+      if (sender === 'user') {
+        div.className = 'flex items-start justify-end gap-2.5';
+        div.innerHTML = `
+          <div class="bg-sage-600 text-white rounded-2xl rounded-tr-none p-3.5 text-sm shadow-sm max-w-[85%]">
+            ${escapeHtml(text)}
+          </div>
+        `;
+      } else {
+        div.className = 'flex items-start gap-2.5';
+        div.innerHTML = `
+          <div class="w-8 h-8 rounded-full bg-terracotta-100 text-terracotta-600 flex items-center justify-center shrink-0 text-xs font-bold">AI</div>
+          <div class="msg-body bg-white border border-ivory-200 rounded-2xl rounded-tl-none p-3.5 text-sm text-stone-700 shadow-sm max-w-[88%] leading-relaxed">
+            ${escapeHtml(text)}
+          </div>
+        `;
+      }
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+      return id;
+    }
+
+    function updateChatBubble(id, newText) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const body = el.querySelector('.msg-body');
+      if (body) body.textContent = newText;
+      const container = document.getElementById('ai-chat-messages');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function renderAiPreviewCard(plan) {
+      const previewEl = document.getElementById('ai-result-preview');
+      const footerEl = document.getElementById('ai-apply-footer');
+
+      // Set default target date to next Monday
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      const daysUntilNextMon = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+      const nextMonday = addDays(today, daysUntilNextMon);
+      document.getElementById('ai-target-monday').value = formatDateStr(nextMonday);
+
+      const groceryTotal = plan.groceryList.reduce((acc, cur) => acc + (Number(cur.price) || 0), 0);
+
+      previewEl.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h3 class="font-serif text-lg font-bold text-stone-800">맞춤 추천 주간 식단표</h3>
+          <span class="px-2.5 py-1 rounded-full bg-sage-100 text-sage-700 text-xs font-bold">예상 장보기 ${groceryTotal.toLocaleString()}원</span>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5">
+          ${plan.sharedIngredientsSummary.map(ing => `<span class="px-2 py-0.5 rounded-md bg-ivory-100 text-stone-700 text-[11px] font-medium">🥬 ${escapeHtml(ing)}</span>`).join('')}
+        </div>
+
+        <div class="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+          ${plan.weekPlan.map(day => `
+            <div class="p-3 rounded-xl border ${day.isDiningOut ? 'bg-terracotta-50/70 border-terracotta-100' : 'bg-ivory-50 border-ivory-200'} flex items-center justify-between gap-2">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold ${day.isDiningOut ? 'text-terracotta-600' : 'text-sage-700'}">${escapeHtml(day.dayLabel)}</span>
+                  <span class="text-xs font-bold text-stone-800">${escapeHtml(day.title)}</span>
+                </div>
+                <div class="text-[11px] text-stone-500 mt-0.5">
+                  ${day.isDiningOut ? '외식/포장 예산 활용' : `⏱ ${day.cookTime}분 원팬 · ${day.tags.map(t => '#' + t).join(' ')}`}
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="bg-ivory-50/80 rounded-xl p-3 border border-ivory-200">
+          <h4 class="text-xs font-bold text-stone-700 mb-1.5">🛒 연동 장보기 품목 (${plan.groceryList.length}종)</h4>
+          <p class="text-xs text-stone-600 leading-relaxed">
+            ${plan.groceryList.map(g => `${escapeHtml(g.name)}`).join(', ')}
+          </p>
+        </div>
+      `;
+
+      footerEl.classList.remove('hidden');
+    }
+
+    window.applyAiPlanToWorkspace = async function() {
+      const plan = state.latestAiPlan;
+      if (!plan) return;
+
+      const startMondayStr = document.getElementById('ai-target-monday').value;
+      if (!startMondayStr) {
+        showToast('적용할 시작 날짜(월요일)를 선택해 주세요.', 'error');
+        return;
+      }
+
+      const startMonday = new Date(startMondayStr + 'T00:00:00');
+
+      // 1. Add any new recipes to Recipe Stack & assign to calendar
+      plan.weekPlan.forEach(item => {
+        const targetDateStr = formatDateStr(addDays(startMonday, item.dayOffset));
+        if (item.isDiningOut) {
+          state.data.plans[targetDateStr] = {
+            type: 'dining_out',
+            title: item.title
+          };
+        } else {
+          // Check if recipe title already exists in stack
+          let existing = state.data.recipes.find(r => r.title.trim() === item.title.trim());
+          if (!existing) {
+            existing = {
+              id: 'rec-' + Date.now() + '-' + item.dayOffset,
+              title: item.title,
+              cookTime: item.cookTime || 15,
+              tags: item.tags || [],
+              ingredients: item.ingredients || '',
+              seasoning: item.seasoning || '',
+              steps: item.steps || []
+            };
+            state.data.recipes.unshift(existing);
+          }
+          state.data.plans[targetDateStr] = {
+            type: 'recipe',
+            recipeId: existing.id,
+            title: existing.title
+          };
+        }
+      });
+
+      // 2. Replace Grocery List with the newly planned week's shopping items
+      state.data.groceries = plan.groceryList.map((g, idx) => ({
+        id: 'g-ai-' + Date.now() + '-' + idx,
+        category: ['meat', 'veggie', 'etc'].includes(g.category) ? g.category : 'etc',
+        name: g.name,
+        price: Number(g.price) || 0,
+        checked: false
+      }));
+
+      await saveWorkspaceToCloud();
+      showToast('다음 주 식단표, 레시피 스택, 장보기 리스트에 한 번에 적용되었습니다!');
+      switchTab('calendar');
+    };
+
+    // -------------------------------------------------------------------------
+    // 8. USER INTERACTIONS & MODAL HANDLERS
+    // -------------------------------------------------------------------------
+    window.switchTab = function(tabName) {
+      ['calendar', 'stack', 'ai', 'grocery'].forEach(name => {
+        const view = document.getElementById(`view-${name}`);
+        const btn = document.getElementById(`tab-btn-${name}`);
+        if (name === tabName) {
+          view.classList.remove('hidden');
+          btn.classList.add('border-sage-600', 'text-sage-700', 'font-semibold');
+          btn.classList.remove('border-transparent', 'text-stone-500', 'font-medium');
+        } else {
+          view.classList.add('hidden');
+          btn.classList.remove('border-sage-600', 'text-sage-700', 'font-semibold');
+          btn.classList.add('border-transparent', 'text-stone-500', 'font-medium');
+        }
+      });
+    };
+
+    window.setCalendarMode = function(mode) {
+      state.calendarMode = mode;
+      state.calendarOffset = 0;
+      const weekBtn = document.getElementById('cal-mode-week');
+      const monthBtn = document.getElementById('cal-mode-month');
+      if (mode === 'week') {
+        weekBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-sage-700 shadow-sm transition';
+        monthBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-stone-900 transition';
+      } else {
+        monthBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-sage-700 shadow-sm transition';
+        weekBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-stone-900 transition';
+      }
+      renderCalendar();
+    };
+
+    window.changeCalendarOffset = function(delta) {
+      state.calendarOffset += delta;
+      renderCalendar();
+    };
+
+    window.resetCalendarToday = function() {
+      state.calendarOffset = 0;
+      renderCalendar();
+    };
+
+    window.setStackFilter = function(filter) {
+      state.stackFilter = filter;
+      ['all', 'safe', 'recent'].forEach(f => {
+        const btn = document.getElementById(`stack-filter-${f}`);
+        if (f === filter) {
+          btn.classList.add('bg-white', 'shadow-sm', 'font-semibold');
+        } else {
+          btn.classList.remove('bg-white', 'shadow-sm', 'font-semibold');
+        }
+      });
+      renderRecipeStack();
+    };
+
+    window.setIngredientTagFilter = function(tag) {
+      state.selectedIngredientTag = tag;
+      renderRecipeStack();
+    };
+
+    // Open Recipe Detail Modal
+    window.openRecipeDetail = function(recipeId, assignedDateStr = null) {
+      const recipe = state.data.recipes.find(r => r.id === recipeId);
+      if (!recipe) return;
+
+      state.selectedRecipeForModal = recipeId;
+      state.selectedDateForModal = assignedDateStr;
+
+      const stats = getRecipeStats(recipeId);
+      document.getElementById('modal-recipe-title').textContent = recipe.title;
+      document.getElementById('modal-recipe-time').textContent = `⏱ ${recipe.cookTime}분 원팬`;
+      document.getElementById('modal-recipe-history').textContent = `누적 ${stats.count}회 · ${stats.label}`;
+
+      document.getElementById('modal-recipe-tags').innerHTML = recipe.tags
+        .map(t => `<span class="px-2.5 py-1 rounded-lg bg-sage-50 text-sage-700 text-xs font-semibold border border-sage-100">#${escapeHtml(t)}</span>`)
+        .join('');
+
+      document.getElementById('modal-recipe-ingredients').textContent = recipe.ingredients || '기본 재료';
+      document.getElementById('modal-recipe-seasoning').textContent = recipe.seasoning || '기본 양념';
+
+      document.getElementById('modal-recipe-steps').innerHTML = (recipe.steps || [])
+        .map((step, idx) => `
+          <li class="flex items-start gap-2.5">
+            <span class="w-5 h-5 rounded-full bg-sage-600 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">${idx + 1}</span>
+            <span class="leading-relaxed">${escapeHtml(step)}</span>
+          </li>
+        `).join('');
+
+      const delBtn = document.getElementById('modal-delete-plan-btn');
+      if (assignedDateStr) {
+        delBtn.classList.remove('hidden');
+        document.getElementById('modal-assign-date').value = assignedDateStr;
+      } else {
+        delBtn.classList.add('hidden');
+        document.getElementById('modal-assign-date').value = formatDateStr(new Date());
+      }
+
+      document.getElementById('recipe-detail-modal').classList.remove('hidden');
+      lucide.createIcons();
+    };
+
+    window.assignCurrentRecipeToDate = async function() {
+      const recipeId = state.selectedRecipeForModal;
+      const dateStr = document.getElementById('modal-assign-date').value;
+      const recipe = state.data.recipes.find(r => r.id === recipeId);
+      if (!recipe || !dateStr) return;
+
+      state.data.plans[dateStr] = {
+        type: 'recipe',
+        recipeId: recipe.id,
+        title: recipe.title
+      };
+      closeModal('recipe-detail-modal');
+      await saveWorkspaceToCloud();
+      showToast(`${dateStr} 저녁 식단에 '${recipe.title}' 배정 완료!`);
+    };
+
+    window.removeMealFromCurrentDate = async function() {
+      const dateStr = state.selectedDateForModal;
+      if (!dateStr) return;
+      delete state.data.plans[dateStr];
+      closeModal('recipe-detail-modal');
+      await saveWorkspaceToCloud();
+      showToast(`${dateStr} 식단을 비웠습니다.`);
+    };
+
+    window.clearSpecificDate = async function(dateStr) {
+      delete state.data.plans[dateStr];
+      await saveWorkspaceToCloud();
+      showToast(`${dateStr} 일정을 삭제했습니다.`);
+    };
+
+    // Open Date Assignment Modal (when clicking an empty or existing day cell)
+    window.openAssignDateModal = function(dateStr) {
+      state.selectedDateForModal = dateStr;
+      const d = new Date(dateStr + 'T00:00:00');
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+      document.getElementById('assign-modal-date-title').textContent = `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${dayNames[d.getDay()]})`;
+
+      const listEl = document.getElementById('assign-modal-stack-list');
+      listEl.innerHTML = state.data.recipes.map(r => {
+        const stats = getRecipeStats(r.id);
+        return `
+          <button onclick="assignRecipeToSelectedDate('${r.id}')" class="w-full p-3 rounded-2xl border border-ivory-200 hover:border-sage-400 hover:bg-sage-50/40 flex items-center justify-between text-left transition">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-stone-800">${escapeHtml(r.title)}</span>
+                <span class="text-[11px] font-semibold text-sage-700">${r.cookTime}분</span>
+              </div>
+              <div class="text-[11px] text-stone-500 mt-0.5">
+                ${r.tags.map(t => '#' + t).join(' ')} · <span class="${stats.isRecent ? 'text-terracotta-600 font-semibold' : 'text-sage-600'}">${stats.label}</span>
+              </div>
+            </div>
+            <i data-lucide="plus" class="w-4 h-4 text-stone-400 shrink-0"></i>
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('assign-date-modal').classList.remove('hidden');
+      lucide.createIcons();
+    };
+
+    window.assignRecipeToSelectedDate = async function(recipeId) {
+      const dateStr = state.selectedDateForModal;
+      const recipe = state.data.recipes.find(r => r.id === recipeId);
+      if (!dateStr || !recipe) return;
+
+      state.data.plans[dateStr] = {
+        type: 'recipe',
+        recipeId: recipe.id,
+        title: recipe.title
+      };
+      closeModal('assign-date-modal');
+      await saveWorkspaceToCloud();
+      showToast(`'${recipe.title}' 메뉴가 배정되었습니다.`);
+    };
+
+    window.assignDiningOutToSelectedDate = async function() {
+      const dateStr = state.selectedDateForModal;
+      if (!dateStr) return;
+      state.data.plans[dateStr] = {
+        type: 'dining_out',
+        title: '비상 외식 / 포장 (주 1회)'
+      };
+      closeModal('assign-date-modal');
+      await saveWorkspaceToCloud();
+      showToast('비상 외식 일정이 등록되었습니다.');
+    };
+
+    // Create New Recipe Modal
+    window.openNewRecipeModal = function() {
+      document.getElementById('new-recipe-modal').classList.remove('hidden');
+    };
+
+    window.handleCreateRecipe = async function(e) {
+      e.preventDefault();
+      const title = document.getElementById('new-rec-title').value.trim();
+      const cookTime = Number(document.getElementById('new-rec-time').value) || 15;
+      const tagsRaw = document.getElementById('new-rec-tags').value;
+      const ingredients = document.getElementById('new-rec-ingredients').value.trim();
+      const seasoning = document.getElementById('new-rec-seasoning').value.trim();
+      const stepsRaw = document.getElementById('new-rec-steps').value;
+
+      const tags = tagsRaw.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean);
+      const steps = stepsRaw.split('\n').map(s => s.replace(/^\d+\.\s*/, '').trim()).filter(Boolean);
+
+      const newRec = {
+        id: 'rec-' + Date.now(),
+        title,
+        cookTime,
+        tags: tags.length ? tags : ['집밥'],
+        ingredients: ingredients || '2인 기준 재료',
+        seasoning: seasoning || '기본 양념',
+        steps: steps.length ? steps : ['쌀을 씻어 취사 버튼을 누른다.', '프라이팬에 재료를 15분간 맛있게 볶아 완성한다.']
+      };
+
+      state.data.recipes.unshift(newRec);
+      e.target.reset();
+      closeModal('new-recipe-modal');
+      await saveWorkspaceToCloud();
+      showToast(`'${title}' 레시피가 스택에 쌓였습니다!`);
+    };
+
+    // Grocery List Actions
+    window.handleAddGrocery = async function(e) {
+      e.preventDefault();
+      const category = document.getElementById('grocery-cat-input').value;
+      const name = document.getElementById('grocery-name-input').value.trim();
+      const price = Number(document.getElementById('grocery-price-input').value) || 0;
+      if (!name) return;
+
+      state.data.groceries.push({
+        id: 'g-' + Date.now(),
+        category,
+        name,
+        price,
+        checked: false
+      });
+
+      document.getElementById('grocery-name-input').value = '';
+      document.getElementById('grocery-price-input').value = '';
+      await saveWorkspaceToCloud();
+    };
+
+    window.toggleGroceryItem = async function(id) {
+      const item = state.data.groceries.find(g => g.id === id);
+      if (item) {
+        item.checked = !item.checked;
+        await saveWorkspaceToCloud();
+      }
+    };
+
+    window.deleteGroceryItem = async function(id) {
+      state.data.groceries = state.data.groceries.filter(g => g.id !== id);
+      await saveWorkspaceToCloud();
+    };
+
+    window.clearCheckedGroceries = async function() {
+      state.data.groceries = state.data.groceries.filter(g => !g.checked);
+      await saveWorkspaceToCloud();
+      showToast('장보기 완료된 항목을 정리했습니다.');
+    };
+
+    window.updateWeeklyBudget = async function(val) {
+      const num = Number(val);
+      if (num > 0) {
+        state.data.weeklyBudget = num;
+        await saveWorkspaceToCloud();
+      }
+    };
+
+    // Couple Room Sync Actions
+    window.openRoomModal = function() {
+      document.getElementById('room-sync-modal').classList.remove('hidden');
+    };
+
+    window.changeCoupleRoom = function() {
+      const raw = document.getElementById('room-code-input').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+      if (!raw) {
+        showToast('영문 또는 숫자로 공유 코드를 입력해 주세요.', 'error');
+        return;
+      }
+      closeModal('room-sync-modal');
+      if (db && currentUser) {
+        subscribeToCoupleRoom(raw);
+      } else {
+        state.roomCode = raw;
+        document.getElementById('current-room-label').textContent = raw;
+      }
+      showToast(`공유 코드 '${raw}' 방에 연결되었습니다.`);
+    };
+
+    window.copyInviteLink = function() {
+      const shareUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(state.roomCode)}`;
+      const tempInput = document.createElement('input');
+      tempInput.value = shareUrl;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+      showToast('부부 공유 링크가 복사되었습니다! 카톡으로 보내보세요.');
+    };
+
+    window.closeModal = function(modalId) {
+      document.getElementById(modalId).classList.add('hidden');
+    };
+
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const bgClass = type === 'error' ? 'bg-terracotta-600 text-white' : 'bg-stone-800 text-white';
+      toast.className = `${bgClass} px-4 py-3 rounded-2xl shadow-lg text-xs sm:text-sm font-medium flex items-center gap-2 transition-all duration-300 transform translate-y-0`;
+      toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Initialize Application
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initFirebase();
+    });
+  </script>
+</body>
+</html>
